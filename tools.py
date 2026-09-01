@@ -7,6 +7,10 @@ are all called through OpenAI-compatible endpoints.
 import os
 import subprocess
 
+import requests
+
+import key_store
+
 WORKDIR = os.environ.get("AGENT_WORKDIR", os.path.join(os.getcwd(), "workspace"))
 os.makedirs(WORKDIR, exist_ok=True)
 
@@ -91,7 +95,55 @@ def list_directory(path: str = ".") -> dict:
         return {"error": str(e)}
 
 
+def web_search(query: str, max_results: int = 5) -> dict:
+    """Live web search via Tavily's free tier. Returns a short answer plus
+    titles/URLs/snippets so the agent can point people to real sources
+    (tutorials, official resource sites, documentation, etc.) instead of
+    guessing from memory."""
+    key = key_store.get_active_key("tavily")
+    if not key:
+        return {"error": "No Tavily API key configured. Add one in Settings "
+                          "to enable web search (free, no card, at tavily.com)."}
+    try:
+        resp = requests.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": key,
+                "query": query,
+                "max_results": max_results,
+                "include_answer": True,
+            },
+            timeout=20,
+        )
+        data = resp.json()
+        if resp.status_code != 200:
+            return {"error": data.get("error", f"Tavily error {resp.status_code}")}
+        results = [
+            {
+                "title": r.get("title"),
+                "url": r.get("url"),
+                "snippet": (r.get("content") or "")[:400],
+            }
+            for r in data.get("results", [])
+        ]
+        return {"quick_answer": data.get("answer"), "sources": results}
+    except Exception as e:
+        return {"error": f"Search failed: {e}"}
+
+
 TOOL_SCHEMAS = [
+    {"type": "function", "function": {
+        "name": "web_search",
+        "description": "Search the live web for current information: news, tutorials, "
+                        "documentation, official resource sites, study material, past "
+                        "exam paper repositories, etc. Returns a short answer plus a "
+                        "list of source titles/URLs/snippets -- always point the person "
+                        "to real sources rather than fabricating content.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"},
+            "max_results": {"type": "integer", "description": "Default 5, max 10."},
+        }, "required": ["query"]},
+    }},
     {"type": "function", "function": {
         "name": "bash_execute",
         "description": "Run a shell command in the working directory (tests, builds, installs, etc).",
@@ -141,6 +193,8 @@ TOOL_SCHEMAS = [
 
 
 def execute_tool(name: str, args: dict) -> dict:
+    if name == "web_search":
+        return web_search(**args)
     if name == "bash_execute":
         return bash_execute(**args)
     if name == "read_file":
