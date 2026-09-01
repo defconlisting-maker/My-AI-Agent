@@ -6,13 +6,19 @@ Gemini and Groq (free forever) with DeepSeek as bonus capacity that quietly
 retires itself once its free tokens run out, plus Tavily for live web search.
 What it does
 Chat interface in your browser, works from phone or laptop
+Projects — keep separate threads going (a coding project, school research,
+a specific task), each with its own chat history and its own file workspace
+so nothing bleeds into another project. Pin the ones you use often, rename
+them, delete the ones you're done with, switch between them anytime from the
+sidebar.
 Give it a coding task → it plans, writes files, runs commands, checks its own
 work, and tells you when it's actually done (verified, not just "should work")
 Give it a research question → it searches the live web and shares real
 sources/links (great for finding tutorials, study material, official past
 paper repositories) rather than answering from memory alone
-Upload a PDF/Word/text document → it reads it and uses it as context for the task
-Prepare and download a ZIP of anything it built, right from the sidebar
+Upload a PDF/Word/text document → it reads it and uses it as context, saved
+into the current project's workspace so the agent can also open/edit it
+Prepare and download a ZIP of the current project's files, right from the sidebar
 Automatically falls back Gemini → Groq → DeepSeek if one is rate-limited
 If a DeepSeek key runs out, you get a small non-blocking banner — current work
 keeps going on Gemini/Groq. Paste a new DeepSeek key in Settings anytime.
@@ -61,6 +67,10 @@ Watch it plan, write, and test the code live in the chat.
 Honest limitations
 The app sleeps after long inactivity and takes ~30 seconds to wake up
 on your next visit — not a cost, just a small delay.
+Projects are stored in the app's own storage, which normally persists
+between visits, but could be wiped if Streamlit Cloud ever fully rebuilds
+your app from scratch (rare, but possible). Use the download button for
+anything you want to be 100% sure of keeping.
 1 GB memory limit on the free tier — fine for coding tasks, would
 struggle with huge datasets or heavy ML workloads.
 Your repo is public, meaning the code is visible to anyone — but your
