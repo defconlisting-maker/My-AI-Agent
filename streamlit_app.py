@@ -6,7 +6,11 @@ Local test:  streamlit run streamlit_app.py
 Deploy:      see README.md
 """
 
+import io
 import json
+import os
+import zipfile
+
 import streamlit as st
 
 import providers
@@ -18,18 +22,28 @@ st.set_page_config(page_title="My Agent", page_icon="🤖", layout="centered")
 
 MAX_ITERATIONS = 15
 
-SYSTEM_PROMPT = """You are an autonomous coding agent with real tools: run shell \
-commands, read/write/edit files, list directories. Work inside the given \
-working directory only.
+SYSTEM_PROMPT = """You are a helpful assistant with real tools: live web search, \
+running shell commands, and reading/writing/editing files. Work inside the \
+given working directory only for any files you create.
 
 Rules:
-1. Plan briefly before acting on non-trivial tasks.
-2. Work incrementally and run/test what you write before moving on.
-3. Never call task_complete until you've actually run and verified the result.
+1. For coding tasks: plan briefly, work incrementally, and run/test what you \
+write before moving on. Never call task_complete until you've actually run \
+and verified the result.
+2. For research or homework-help questions (including requests for past exam \
+papers, study material, or tutorials): use web_search to find real, current \
+sources, and share the actual links/titles you found rather than inventing \
+answers from memory. Never reproduce copyrighted material (exam papers, \
+textbook pages, articles) verbatim -- summarize briefly and point to the \
+source link instead. Prefer official or well-known educational sites.
+3. When helping with homework, favor explaining concepts and pointing to \
+practice resources over just handing over a final answer to copy -- the goal \
+is the person understanding the material.
 4. If a document's contents were provided in the conversation, treat that as \
 ground truth context for the task.
 5. Be concise in your text -- the tool calls are the actual work.
-6. Call task_complete with a summary once genuinely done and verified.
+6. Call task_complete with a summary once genuinely done (for coding tasks) \
+or once the question is fully answered (for research questions).
 """
 
 if "messages" not in st.session_state:
@@ -65,14 +79,41 @@ with st.sidebar:
             key_store.add_key("deepseek", dk.strip())
             st.success("DeepSeek key saved.")
 
+    with st.form("tavily_form", clear_on_submit=True):
+        tk = st.text_input(
+            "Tavily API key (enables live web search & research)", type="password"
+        )
+        if st.form_submit_button("Save Tavily key") and tk.strip():
+            key_store.add_key("tavily", tk.strip())
+            st.success("Tavily key saved. Web search is now enabled.")
+
     st.divider()
     s = key_store.status()
     st.caption(
-        f"Gemini keys: {s['gemini']['total']} · "
-        f"Groq keys: {s['groq']['total']} · "
-        f"DeepSeek keys: {s['deepseek']['total']} "
-        f"({s['deepseek']['exhausted']} exhausted)"
+        f"Gemini: {s['gemini']['total']} · Groq: {s['groq']['total']} · "
+        f"DeepSeek: {s['deepseek']['total']} ({s['deepseek']['exhausted']} exhausted) · "
+        f"Tavily: {s['tavily']['total']}"
     )
+
+    st.divider()
+    st.subheader("📦 Download your project")
+    if st.button("Prepare download"):
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, _dirs, files in os.walk(tools.WORKDIR):
+                for fname in files:
+                    filepath = os.path.join(root, fname)
+                    arcname = os.path.relpath(filepath, tools.WORKDIR)
+                    zf.write(filepath, arcname)
+        st.session_state.zip_data = zip_buf.getvalue()
+        st.success("Ready — click Download below.")
+    if st.session_state.get("zip_data"):
+        st.download_button(
+            "⬇ Download ZIP",
+            data=st.session_state.zip_data,
+            file_name="my_project.zip",
+            mime="application/zip",
+        )
 
     st.divider()
     st.subheader("📎 Upload a document")
@@ -95,7 +136,10 @@ with st.sidebar:
 # Main chat area
 # --------------------------------------------------------------------------
 st.title("🤖 My Agent")
-st.caption("Give it a coding task. It plans, writes, runs, and verifies before it stops.")
+st.caption(
+    "Ask it to build/fix code, or ask it to research something and find real "
+    "sources. It plans, works, and verifies before it stops."
+)
 
 for entry in st.session_state.display_log:
     with st.chat_message(entry["role"]):
