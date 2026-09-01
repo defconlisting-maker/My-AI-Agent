@@ -21,6 +21,7 @@ _DEFAULT = {
     "gemini": [],   # list of {"key": str}
     "groq": [],     # list of {"key": str}
     "deepseek": [], # list of {"key": str, "exhausted": bool}
+    "tavily": [],   # list of {"key": str} -- web search, 1000 free searches/month
 }
 
 
