@@ -11,11 +11,11 @@ import key_store
 PROVIDER_CONFIG = {
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "model": "gemini-2.5-pro",
+        "model": "gemini-3.7-flash",
     },
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
+        "model": "openai/gpt-oss-120b",
     },
     "deepseek": {
         "base_url": "https://api.deepseek.com/v1",
@@ -46,11 +46,12 @@ def call_with_fallback(messages, tools=None, notify=None):
     DeepSeek key going dead) -- the caller decides how/whether to surface it.
     Returns (provider_name, response_message_dict).
     """
-    last_error = None
+    errors = {}
 
     for provider in FALLBACK_ORDER:
         key = key_store.get_active_key(provider)
         if not key:
+            errors[provider] = "no key configured"
             continue
 
         cfg = PROVIDER_CONFIG[provider]
@@ -63,7 +64,7 @@ def call_with_fallback(messages, tools=None, notify=None):
             response = client.chat.completions.create(**kwargs)
             return provider, response.choices[0].message
         except (APIStatusError, RateLimitError, Exception) as e:
-            last_error = e
+            errors[provider] = str(e)
             if provider == "deepseek" and _is_quota_error(e):
                 key_store.mark_exhausted("deepseek", key)
                 if notify:
@@ -77,6 +78,7 @@ def call_with_fallback(messages, tools=None, notify=None):
             # Try the next provider in the chain rather than failing outright.
             continue
 
+    detail = "; ".join(f"{p}: {e}" for p, e in errors.items())
     raise NoProviderAvailable(
-        f"No configured provider could handle the request. Last error: {last_error}"
+        f"No configured provider could handle the request. Details -- {detail}"
     )
