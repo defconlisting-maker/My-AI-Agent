@@ -235,13 +235,20 @@ for entry in st.session_state.display_log:
     with st.chat_message(entry["role"]):
         st.markdown(entry["content"])
 
-with st.expander("📎 Attach a file (PDF, Word, text, code) / Voeg 'n l\u00eaer aan", expanded=False):
-    uploaded = st.file_uploader(
-        "Choose a file",
-        type=["pdf", "docx", "txt", "md", "csv", "json", "py"],
-        label_visibility="collapsed",
-    )
-    if uploaded is not None and uploaded.name != st.session_state.get("last_uploaded"):
+submission = st.chat_input(
+    "Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...",
+    accept_file="multiple",
+    file_type=["pdf", "docx", "txt", "md", "csv", "json", "py"],
+)
+
+if submission:
+    task = submission.text or ""
+    uploaded_files = submission["files"] or []
+
+    # Save + read any attached files first, so their content is in context
+    # before the model sees the accompanying message.
+    upload_notes = []
+    for uploaded in uploaded_files:
         save_path = os.path.join(tools.WORKDIR, uploaded.name)
         with open(save_path, "wb") as f:
             f.write(uploaded.getbuffer())
@@ -250,17 +257,19 @@ with st.expander("📎 Attach a file (PDF, Word, text, code) / Voeg 'n l\u00eaer
             "role": "user",
             "content": f"[Uploaded document: {uploaded.name}]\n\n{text}",
         })
-        st.session_state.last_uploaded = uploaded.name
-        persist_current_project()
-        st.success(f"Loaded {uploaded.name} ({len(text)} chars) — ready to use in your next message.")
+        upload_notes.append(f"📎 {uploaded.name}")
 
-task = st.chat_input("Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...")
+    display_text = task
+    if upload_notes:
+        display_text = (task + "\n\n" if task else "") + "\n".join(upload_notes)
 
-if task:
-    st.session_state.display_log.append({"role": "user", "content": task})
+    if not task and upload_notes:
+        task = "I've attached a file — please read it and let me know what's in it, or wait for my next message telling you what to do with it."
+
+    st.session_state.display_log.append({"role": "user", "content": display_text})
     st.session_state.messages.append({"role": "user", "content": task})
     with st.chat_message("user"):
-        st.markdown(task)
+        st.markdown(display_text)
 
     notifications = []
 
