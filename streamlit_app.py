@@ -23,7 +23,7 @@ st.set_page_config(page_title="My Agent", page_icon="🤖", layout="centered")
 
 MAX_ITERATIONS = 15
 
-SYSTEM_PROMPT = """You are a helpful assistant with real tools: live web search, \
+SYSTEM_PROMPT_BASE = """You are a helpful assistant with real tools: live web search, \
 running shell commands, and reading/writing/editing files. Work inside the \
 given working directory only for any files you create.
 
@@ -46,6 +46,17 @@ ground truth context for the task.
 6. Call task_complete with a summary once genuinely done (for coding tasks) \
 or once the question is fully answered (for research questions).
 """
+
+LANGUAGE_INSTRUCTIONS = {
+    "auto": "\n7. Reply in whichever language the person writes in -- English "
+            "or Afrikaans -- matching them naturally. If they mix both in one "
+            "message, you may too.",
+    "english": "\n7. Always reply in English, even if the person writes in Afrikaans.",
+    "afrikaans": "\n7. Always reply in Afrikaans (Suid-Afrikaanse Afrikaans), "
+                 "even if the person writes in English.",
+}
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_BASE  # kept for first-project initialization below
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -142,6 +153,17 @@ with st.sidebar:
     st.divider()
     st.subheader("⚙ Settings")
 
+    lang_label = st.selectbox(
+        "Reply language / Antwoordtaal",
+        ["Auto-detect / Outo-bepaal", "English", "Afrikaans"],
+        key="language_select",
+    )
+    st.session_state.language_pref = {
+        "Auto-detect / Outo-bepaal": "auto",
+        "English": "english",
+        "Afrikaans": "afrikaans",
+    }[lang_label]
+
     with st.form("gemini_form", clear_on_submit=True):
         gk = st.text_input("Gemini API key", type="password")
         if st.form_submit_button("Save Gemini key") and gk.strip():
@@ -199,13 +221,28 @@ with st.sidebar:
             mime="application/zip",
         )
 
-    st.divider()
-    st.subheader("📎 Upload a document")
+
+# --------------------------------------------------------------------------
+# Main chat area
+# --------------------------------------------------------------------------
+st.title(f"🤖 My Agent — {projects_store.get_name(st.session_state.current_project_id)}")
+st.caption(
+    "Ask it to build/fix code, or ask it to research something. / "
+    "Vra dit om kode te bou/regmaak, of iets na te vors."
+)
+
+for entry in st.session_state.display_log:
+    with st.chat_message(entry["role"]):
+        st.markdown(entry["content"])
+
+with st.expander("📎 Attach a file (PDF, Word, text, code) / Voeg 'n l\u00eaer aan", expanded=False):
     uploaded = st.file_uploader(
-        "PDF, Word, or text file", type=["pdf", "docx", "txt", "md", "csv", "json", "py"]
+        "Choose a file",
+        type=["pdf", "docx", "txt", "md", "csv", "json", "py"],
+        label_visibility="collapsed",
     )
-    if uploaded is not None:
-        save_path = f"{tools.WORKDIR}/{uploaded.name}"
+    if uploaded is not None and uploaded.name != st.session_state.get("last_uploaded"):
+        save_path = os.path.join(tools.WORKDIR, uploaded.name)
         with open(save_path, "wb") as f:
             f.write(uploaded.getbuffer())
         text = documents.extract_text(save_path)
@@ -213,24 +250,11 @@ with st.sidebar:
             "role": "user",
             "content": f"[Uploaded document: {uploaded.name}]\n\n{text}",
         })
-        st.success(f"Loaded {uploaded.name} ({len(text)} chars) into context.")
+        st.session_state.last_uploaded = uploaded.name
         persist_current_project()
+        st.success(f"Loaded {uploaded.name} ({len(text)} chars) — ready to use in your next message.")
 
-
-# --------------------------------------------------------------------------
-# Main chat area
-# --------------------------------------------------------------------------
-st.title(f"🤖 My Agent — {projects_store.get_name(st.session_state.current_project_id)}")
-st.caption(
-    "Ask it to build/fix code, or ask it to research something and find real "
-    "sources. It plans, works, and verifies before it stops."
-)
-
-for entry in st.session_state.display_log:
-    with st.chat_message(entry["role"]):
-        st.markdown(entry["content"])
-
-task = st.chat_input("Describe the coding task...")
+task = st.chat_input("Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...")
 
 if task:
     st.session_state.display_log.append({"role": "user", "content": task})
@@ -242,6 +266,13 @@ if task:
 
     def notify(event):
         notifications.append(event)
+
+    # Refresh the system message with the current language preference before calling.
+    lang_pref = st.session_state.get("language_pref", "auto")
+    st.session_state.messages[0] = {
+        "role": "system",
+        "content": SYSTEM_PROMPT_BASE + LANGUAGE_INSTRUCTIONS[lang_pref],
+    }
 
     with st.chat_message("assistant"):
         status_box = st.status("Working...", expanded=True)
