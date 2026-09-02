@@ -22,9 +22,6 @@ import key_store
 import documents
 import projects_store
 
-_mic_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mic_component")
-mic_input = components.declare_component("mic_input", path=_mic_dir)
-
 st.set_page_config(page_title="My Agent", page_icon="🤖", layout="centered")
 
 MAX_ITERATIONS = 15
@@ -433,25 +430,12 @@ def run_turn(task: str, uploaded_files=None):
 
 
 # --------------------------------------------------------------------------
-# Voice input row -- sits just above the chat box in normal page flow. (A
-# fixed-position CSS version was tried here and caused it to overlap the
-# real chat input, blocking typing -- reverted to this simpler, reliable
-# layout instead.)
+# Voice input is temporarily removed -- three attempts at it each caused a
+# real problem (overlap, then an unrelated third-party bundle failing, then
+# an invisible component) that I could not verify before shipping. Rather
+# than keep guessing at your expense, it's paused here until it can be
+# properly tested. Typing and file attachment are unaffected.
 # --------------------------------------------------------------------------
-mic_col, hint_col = st.columns([1, 8])
-with mic_col:
-    stt_lang = "af-ZA" if st.session_state.get("language_pref") == "afrikaans" else "en-US"
-    mic_result = mic_input(lang=stt_lang, key="mic")
-    voice_text = None
-    if mic_result and mic_result.get("ts") != st.session_state.get("last_mic_ts"):
-        st.session_state.last_mic_ts = mic_result.get("ts")
-        voice_text = mic_result.get("transcript", "")
-with hint_col:
-    st.caption("Tap the mic to talk / Tik die mikrofoon om te praat")
-
-if voice_text:
-    run_turn(voice_text)
-
 submission = st.chat_input(
     "Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...",
     accept_file="multiple",
