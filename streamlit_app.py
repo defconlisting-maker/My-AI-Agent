@@ -9,6 +9,7 @@ Deploy:      see README.md
 import datetime
 import io
 import json
+import mimetypes
 import os
 import random
 import zipfile
@@ -275,7 +276,35 @@ with st.sidebar:
     )
 
     st.divider()
-    st.subheader("📦 Download your project")
+    st.subheader("📄 Files in this project")
+    file_list = []
+    for root, _dirs, files in os.walk(tools.WORKDIR):
+        for fname in files:
+            full_path = os.path.join(root, fname)
+            file_list.append(os.path.relpath(full_path, tools.WORKDIR))
+
+    if not file_list:
+        st.caption("No files yet — ask the agent to build something.")
+    else:
+        for rel_path in sorted(file_list):
+            full_path = os.path.join(tools.WORKDIR, rel_path)
+            try:
+                with open(full_path, "rb") as f:
+                    file_bytes = f.read()
+                mime_type, _ = mimetypes.guess_type(rel_path)
+                st.download_button(
+                    f"⬇ {rel_path}",
+                    data=file_bytes,
+                    file_name=os.path.basename(rel_path),
+                    mime=mime_type or "application/octet-stream",
+                    key=f"dl_{rel_path}",
+                    use_container_width=True,
+                )
+            except Exception:
+                st.caption(f"⚠ Could not read {rel_path}")
+
+    st.divider()
+    st.subheader("📦 Download everything as a ZIP")
     if st.button("Prepare download"):
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
