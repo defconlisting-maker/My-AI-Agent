@@ -168,20 +168,22 @@ with st.sidebar:
 
     for p in projects_store.list_projects():
         is_current = p["id"] == st.session_state.current_project_id
-        pin_label = "Unpin" if p.get("pinned") else "Pin"
-        cols = st.columns([4, 2, 2, 2])
 
-        label = ("**" + p["name"] + "**") if is_current else p["name"]
-        if cols[0].button(label, key=f"select_{p['id']}", use_container_width=True):
+        label = ("📌 " if p.get("pinned") else "") + p["name"]
+        label = ("**" + label + "**") if is_current else label
+        if st.button(label, key=f"select_{p['id']}", use_container_width=True):
             persist_current_project()
             switch_project(p["id"])
             st.rerun()
-        if cols[1].button(pin_label, key=f"pin_{p['id']}", help="Pin to top", use_container_width=True):
+
+        act1, act2, act3 = st.columns(3)
+        pin_btn_text = "Unpin" if p.get("pinned") else "Pin"
+        if act1.button(pin_btn_text, key=f"pin_{p['id']}", help="Pin to top", use_container_width=True):
             projects_store.toggle_pin(p["id"])
             st.rerun()
-        if cols[2].button("Rename", key=f"edit_{p['id']}", help="Rename this project", use_container_width=True):
+        if act2.button("Rename", key=f"edit_{p['id']}", help="Rename this project", use_container_width=True):
             st.session_state[f"renaming_{p['id']}"] = not st.session_state.get(f"renaming_{p['id']}", False)
-        if cols[3].button("Delete", key=f"del_{p['id']}", help="Delete this project", use_container_width=True):
+        if act3.button("Delete", key=f"del_{p['id']}", help="Delete this project", use_container_width=True):
             st.session_state[f"confirm_del_{p['id']}"] = True
 
         if st.session_state.get(f"renaming_{p['id']}"):
@@ -429,43 +431,24 @@ def run_turn(task: str, uploaded_files=None):
 
 
 # --------------------------------------------------------------------------
-# Voice input -- pinned to a fixed spot beside the chat box via CSS, so it
-# never scrolls away as the conversation grows. Streamlit's own paperclip
-# lives inside the native chat_input component, which is sealed and can't
-# host a third-party control -- this is the closest equivalent: a control
-# that stays fixed in place right next to it, not one that drifts up the page.
+# Voice input row -- sits just above the chat box in normal page flow. (A
+# fixed-position CSS version was tried here and caused it to overlap the
+# real chat input, blocking typing -- reverted to this simpler, reliable
+# layout instead.)
 # --------------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    div[class*="st-key-mic_bar"] {
-        position: fixed;
-        bottom: 4.5rem;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 999;
-        width: min(700px, 90vw);
-        background: transparent;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-with st.container(key="mic_bar"):
-    mic_col, hint_col = st.columns([1, 8])
-    with mic_col:
-        stt_lang = "af-ZA" if st.session_state.get("language_pref") == "afrikaans" else "en-US"
-        voice_text = speech_to_text(
-            language=stt_lang,
-            start_prompt="🎤",
-            stop_prompt="⏹️",
-            just_once=True,
-            use_container_width=True,
-            key="mic",
-        )
-    with hint_col:
-        st.caption("Tap the mic to talk / Tik die mikrofoon om te praat")
+mic_col, hint_col = st.columns([1, 8])
+with mic_col:
+    stt_lang = "af-ZA" if st.session_state.get("language_pref") == "afrikaans" else "en-US"
+    voice_text = speech_to_text(
+        language=stt_lang,
+        start_prompt="🎤",
+        stop_prompt="⏹️",
+        just_once=True,
+        use_container_width=True,
+        key="mic",
+    )
+with hint_col:
+    st.caption("Tap the mic to talk / Tik die mikrofoon om te praat")
 
 if voice_text:
     run_turn(voice_text)
