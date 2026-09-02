@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, Segoe UI, sans-serif;
+    background: transparent;
+  }
+  #wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  #mic-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    background: #262730;
+    color: #eee;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #mic-btn:hover { background: #333; }
+  #mic-btn.listening {
+    background: #d33;
+    animation: pulse 1s infinite;
+  }
+  #mic-btn.error { background: #a33; }
+  #mic-btn.unsupported { background: #555; cursor: not-allowed; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(221,51,51,0.6); }
+    70% { box-shadow: 0 0 0 8px rgba(221,51,51,0); }
+    100% { box-shadow: 0 0 0 0 rgba(221,51,51,0); }
+  }
+  #status {
+    font-size: 10px;
+    color: #999;
+    margin-top: 2px;
+    text-align: center;
+    max-width: 70px;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <button id="mic-btn" title="Tap to talk">🎤</button>
+  <div id="status"></div>
+</div>
+
+<script>
+// --- Minimal Streamlit bidirectional component protocol (no external libs) ---
+function sendValue(value) {
+  window.parent.postMessage({
+    isStreamlitMessage: true,
+    type: "streamlit:setComponentValue",
+    value: value,
+  }, "*");
+}
+function setFrameHeight() {
+  window.parent.postMessage({
+    isStreamlitMessage: true,
+    type: "streamlit:setFrameHeight",
+    height: document.documentElement.scrollHeight,
+  }, "*");
+}
+window.addEventListener("load", function () {
+  window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 }, "*");
+  setFrameHeight();
+});
+
+let currentLang = "en-US";
+window.addEventListener("message", function (event) {
+  if (event.data && event.data.type === "streamlit:render") {
+    currentLang = (event.data.args && event.data.args.lang) || "en-US";
+  }
+});
+
+// --- Speech recognition ---
+const btn = document.getElementById("mic-btn");
+const status = document.getElementById("status");
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (!SpeechRecognition) {
+  btn.classList.add("unsupported");
+  btn.innerText = "🚫";
+  status.innerText = "Not supported here";
+} else {
+  btn.addEventListener("click", function () {
+    let recognition;
+    try {
+      recognition = new SpeechRecognition();
+    } catch (e) {
+      status.innerText = "Init failed";
+      return;
+    }
+    recognition.lang = currentLang;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
+
+    btn.classList.remove("error");
+    btn.classList.add("listening");
+    status.innerText = "Listening...";
+
+    recognition.onresult = function (event) {
+      const transcript = event.results[0][0].transcript;
+      status.innerText = "Got it!";
+      sendValue({ transcript: transcript, ts: Date.now() });
+    };
+
+    recognition.onerror = function (event) {
+      btn.classList.remove("listening");
+      btn.classList.add("error");
+      status.innerText = "Error: " + event.error;
+    };
+
+    recognition.onend = function () {
+      btn.classList.remove("listening");
+      if (status.innerText === "Listening...") {
+        status.innerText = "No speech heard";
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      status.innerText = "Could not start";
+      btn.classList.remove("listening");
+    }
+  });
+}
+</script>
+</body>
+</html>
