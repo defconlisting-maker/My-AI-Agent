@@ -15,13 +15,15 @@ import zipfile
 
 import streamlit as st
 import streamlit.components.v1 as components
-from streamlit_mic_recorder import speech_to_text
 
 import providers
 import tools
 import key_store
 import documents
 import projects_store
+
+_mic_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mic_component")
+mic_input = components.declare_component("mic_input", path=_mic_dir)
 
 st.set_page_config(page_title="My Agent", page_icon="🤖", layout="centered")
 
@@ -439,14 +441,11 @@ def run_turn(task: str, uploaded_files=None):
 mic_col, hint_col = st.columns([1, 8])
 with mic_col:
     stt_lang = "af-ZA" if st.session_state.get("language_pref") == "afrikaans" else "en-US"
-    voice_text = speech_to_text(
-        language=stt_lang,
-        start_prompt="🎤",
-        stop_prompt="⏹️",
-        just_once=True,
-        use_container_width=True,
-        key="mic",
-    )
+    mic_result = mic_input(lang=stt_lang, key="mic")
+    voice_text = None
+    if mic_result and mic_result.get("ts") != st.session_state.get("last_mic_ts"):
+        st.session_state.last_mic_ts = mic_result.get("ts")
+        voice_text = mic_result.get("transcript", "")
 with hint_col:
     st.caption("Tap the mic to talk / Tik die mikrofoon om te praat")
 
