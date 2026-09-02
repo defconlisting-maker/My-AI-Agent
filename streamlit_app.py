@@ -6,12 +6,16 @@ Local test:  streamlit run streamlit_app.py
 Deploy:      see README.md
 """
 
+import datetime
 import io
 import json
 import os
+import random
 import zipfile
 
 import streamlit as st
+import streamlit.components.v1 as components
+from streamlit_mic_recorder import speech_to_text
 
 import providers
 import tools
@@ -57,6 +61,69 @@ LANGUAGE_INSTRUCTIONS = {
 }
 
 SYSTEM_PROMPT = SYSTEM_PROMPT_BASE  # kept for first-project initialization below
+
+GREETINGS = {
+    "morning": [
+        "Good morning ☀️ What are we building today?",
+        "Môre môre! Wat gaan ons vandag aanpak? 🌅",
+        "Morning! Coffee's optional, curiosity isn't. What's the plan?",
+    ],
+    "afternoon": [
+        "Good afternoon 👋 What can I help you tackle?",
+        "Middag! Waarmee kan ek help?",
+        "Afternoon! Ready when you are.",
+    ],
+    "evening": [
+        "Good evening 🌆 Still going strong — what's next?",
+        "Naand! Nog aan die gang? Wat is die plan?",
+        "Evening! Let's get something done.",
+    ],
+    "night": [
+        "Burning the midnight oil? 🌙 I'm here.",
+        "Laataand werk, ek sien. Wat kan ek doen?",
+        "Late one, huh? Let's make it count.",
+    ],
+}
+
+
+def get_greeting() -> str:
+    """A friendly, time-of-day line -- picked once per browser session, not
+    re-randomized on every rerun (so it doesn't flicker as you interact)."""
+    if "greeting" not in st.session_state:
+        hour = datetime.datetime.now().hour
+        if 5 <= hour < 12:
+            bucket = "morning"
+        elif 12 <= hour < 17:
+            bucket = "afternoon"
+        elif 17 <= hour < 22:
+            bucket = "evening"
+        else:
+            bucket = "night"
+        st.session_state.greeting = random.choice(GREETINGS[bucket])
+    return st.session_state.greeting
+
+
+def speak(text: str, lang: str = "en-US"):
+    """Read text aloud using the browser's own built-in speech synthesis --
+    free, no API, no server round-trip. Runs once per call (each rerun that
+    calls this re-triggers speech, so only call it right after a fresh reply)."""
+    safe_text = json.dumps(text[:2000])  # browsers choke on very long utterances
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            try {{
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance({safe_text});
+                utter.lang = {json.dumps(lang)};
+                utter.rate = 1.0;
+                window.speechSynthesis.speak(utter);
+            }} catch (e) {{ console.log('Speech synthesis not available:', e); }}
+        }})();
+        </script>
+        """,
+        height=0,
+    )
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -164,6 +231,11 @@ with st.sidebar:
         "Afrikaans": "afrikaans",
     }[lang_label]
 
+    st.session_state.voice_reply_enabled = st.toggle(
+        "🔊 Read replies aloud / Lees antwoorde hardop",
+        value=st.session_state.get("voice_reply_enabled", False),
+    )
+
     with st.form("gemini_form", clear_on_submit=True):
         gk = st.text_input("Gemini API key", type="password")
         if st.form_submit_button("Save Gemini key") and gk.strip():
@@ -226,27 +298,24 @@ with st.sidebar:
 # Main chat area
 # --------------------------------------------------------------------------
 st.title(f"🤖 My Agent — {projects_store.get_name(st.session_state.current_project_id)}")
-st.caption(
-    "Ask it to build/fix code, or ask it to research something. / "
-    "Vra dit om kode te bou/regmaak, of iets na te vors."
-)
+
+if not st.session_state.display_log:
+    st.caption(get_greeting())
+else:
+    st.caption(
+        "Ask it to build/fix code, or ask it to research something. / "
+        "Vra dit om kode te bou/regmaak, of iets na te vors."
+    )
 
 for entry in st.session_state.display_log:
     with st.chat_message(entry["role"]):
         st.markdown(entry["content"])
 
-submission = st.chat_input(
-    "Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...",
-    accept_file="multiple",
-    file_type=["pdf", "docx", "txt", "md", "csv", "json", "py"],
-)
 
-if submission:
-    task = submission.text or ""
-    uploaded_files = submission["files"] or []
+def run_turn(task: str, uploaded_files=None):
+    """Process one user turn (typed or spoken) through the agent loop."""
+    uploaded_files = uploaded_files or []
 
-    # Save + read any attached files first, so their content is in context
-    # before the model sees the accompanying message.
     upload_notes = []
     for uploaded in uploaded_files:
         save_path = os.path.join(tools.WORKDIR, uploaded.name)
@@ -264,7 +333,8 @@ if submission:
         display_text = (task + "\n\n" if task else "") + "\n".join(upload_notes)
 
     if not task and upload_notes:
-        task = "I've attached a file — please read it and let me know what's in it, or wait for my next message telling you what to do with it."
+        task = ("I've attached a file — please read it and let me know what's "
+                 "in it, or wait for my next message telling you what to do with it.")
 
     st.session_state.display_log.append({"role": "user", "content": display_text})
     st.session_state.messages.append({"role": "user", "content": task})
@@ -276,7 +346,6 @@ if submission:
     def notify(event):
         notifications.append(event)
 
-    # Refresh the system message with the current language preference before calling.
     lang_pref = st.session_state.get("language_pref", "auto")
     st.session_state.messages[0] = {
         "role": "system",
@@ -353,3 +422,37 @@ if submission:
         st.markdown(final_reply)
         st.session_state.display_log.append({"role": "assistant", "content": final_reply})
         persist_current_project()
+
+        if st.session_state.get("voice_reply_enabled"):
+            speak_lang = "af-ZA" if lang_pref == "afrikaans" else "en-US"
+            speak(final_reply, lang=speak_lang)
+
+
+# --------------------------------------------------------------------------
+# Voice input row -- sits just above the chat box, always in the same spot
+# --------------------------------------------------------------------------
+mic_col, hint_col = st.columns([1, 8])
+with mic_col:
+    stt_lang = "af-ZA" if st.session_state.get("language_pref") == "afrikaans" else "en-US"
+    voice_text = speech_to_text(
+        language=stt_lang,
+        start_prompt="🎤",
+        stop_prompt="⏹️",
+        just_once=True,
+        use_container_width=True,
+        key="mic",
+    )
+with hint_col:
+    st.caption("Tap the mic to talk, or type below. / Tik die mikrofoon om te praat, of tik hieronder.")
+
+if voice_text:
+    run_turn(voice_text)
+
+submission = st.chat_input(
+    "Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...",
+    accept_file="multiple",
+    file_type=["pdf", "docx", "txt", "md", "csv", "json", "py"],
+)
+
+if submission:
+    run_turn(submission.text or "", submission["files"] or [])
