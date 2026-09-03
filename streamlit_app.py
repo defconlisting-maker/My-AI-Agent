@@ -468,7 +468,7 @@ def run_turn(task: str, uploaded_files=None):
 submission = st.chat_input(
     "Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...",
     accept_file="multiple",
-    file_type=["pdf", "docx", "txt", "md", "csv", "json", "py"],
+    file_type=["pdf", "docx", "txt", "md", "csv", "json", "py", "html", "htm", "js", "css"],
 )
 
 if submission:
