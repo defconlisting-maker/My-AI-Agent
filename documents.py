@@ -16,7 +16,7 @@ def extract_text(filepath: str) -> str:
         doc = Document(filepath)
         text = "\n".join(p.text for p in doc.paragraphs)
 
-    elif ext in (".txt", ".md", ".csv", ".json", ".py", ".js", ".html"):
+    elif ext in (".txt", ".md", ".csv", ".json", ".py", ".js", ".html", ".htm", ".css"):
         with open(filepath, "r", errors="replace") as f:
             text = f.read()
 
