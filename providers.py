@@ -26,6 +26,13 @@ PROVIDER_CONFIG = {
 # Order matters: strongest/most-available free option first.
 FALLBACK_ORDER = ["gemini", "groq", "deepseek"]
 
+# Only Gemini (of these three) can actually see images. Groq's and DeepSeek's
+# models here reject a request outright if any message has array-style
+# (multimodal) content -- so before falling back to them, that content has
+# to be flattened to plain text or the *entire* request fails, not just the
+# image part.
+VISION_CAPABLE_PROVIDERS = {"gemini"}
+
 
 class NoProviderAvailable(Exception):
     pass
@@ -37,6 +44,35 @@ def _is_quota_error(err: Exception) -> bool:
     return any(term in msg for term in [
         "quota", "insufficient", "balance", "429", "rate limit", "exceeded",
     ])
+
+
+def _flatten_for_text_only(messages: list) -> list:
+    """Convert any multimodal (list-content) message into a plain string,
+    so text-only providers don't reject the whole request over one old
+    image. The image's presence is noted in words instead of silently
+    dropped, so the model knows context is missing."""
+    flattened = []
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            text_parts = []
+            had_image = False
+            for part in content:
+                if part.get("type") == "text":
+                    text_parts.append(part.get("text", ""))
+                elif part.get("type") == "image_url":
+                    had_image = True
+            text = "\n".join(text_parts)
+            if had_image:
+                text += ("\n[An image was attached here. This model can't see "
+                         "images -- if it matters, ask again once Gemini is "
+                         "available, or describe the image in words.]")
+            new_m = dict(m)
+            new_m["content"] = text
+            flattened.append(new_m)
+        else:
+            flattened.append(m)
+    return flattened
 
 
 def call_with_fallback(messages, tools=None, notify=None):
@@ -57,8 +93,10 @@ def call_with_fallback(messages, tools=None, notify=None):
         cfg = PROVIDER_CONFIG[provider]
         client = OpenAI(api_key=key, base_url=cfg["base_url"])
 
+        msgs_to_send = messages if provider in VISION_CAPABLE_PROVIDERS else _flatten_for_text_only(messages)
+
         try:
-            kwargs = {"model": cfg["model"], "messages": messages}
+            kwargs = {"model": cfg["model"], "messages": msgs_to_send}
             if tools:
                 kwargs["tools"] = tools
             response = client.chat.completions.create(**kwargs)
