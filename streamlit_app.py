@@ -27,15 +27,36 @@ import projects_store
 st.set_page_config(page_title="My Agent", page_icon="🤖", layout="centered")
 
 MAX_ITERATIONS = 15
-MAX_HISTORY_MESSAGES = 20  # keep API requests small enough for free-tier token limits
+MAX_HISTORY_MESSAGES = 12  # keep API requests small enough for free-tier token limits
+# Rough character budget as a proxy for tokens (~4 chars/token), sized to leave
+# headroom under Groq's free-tier 8000 TPM cap once the system prompt and tool
+# schemas (which also cost tokens) are added on top.
+MAX_API_CHARS = 16000
+
+
+def _approx_content_length(messages: list) -> int:
+    total = 0
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for part in content:
+                if part.get("type") == "text":
+                    total += len(part.get("text", ""))
+    return total
 
 
 def trim_for_api(messages: list) -> list:
     """Return a size-capped copy of the conversation for the actual API call,
     without touching the full history kept in session_state/storage. Trims at
     user-message boundaries only, so a tool call is never separated from its
-    result (which would make the request invalid)."""
-    if len(messages) <= MAX_HISTORY_MESSAGES + 1:
+    result (which would make the request invalid). Trims both by message
+    count and, as a second pass, by an approximate character/token budget --
+    a single large attachment (a long transcript, a big document) can blow
+    the budget even within a small number of messages, so count alone isn't
+    enough."""
+    if len(messages) <= 1:
         return messages
 
     system = messages[0]
@@ -44,14 +65,29 @@ def trim_for_api(messages: list) -> list:
     if not user_indices:
         return messages
 
-    keep_from = user_indices[-1]
+    # Pass 1: cap by message count.
+    keep_from = 0
     for idx in reversed(user_indices):
         if len(rest) - idx <= MAX_HISTORY_MESSAGES:
             keep_from = idx
         else:
             break
+    candidate = [system] + rest[keep_from:]
 
-    return [system] + rest[keep_from:]
+    # Pass 2: if still too large by character count, drop earlier turns one
+    # at a time (always keeping at least the current/last turn) until it
+    # fits, or there's nothing left to drop.
+    if _approx_content_length(candidate) > MAX_API_CHARS:
+        candidate_user_indices = [i for i, m in enumerate(rest[keep_from:]) if m.get("role") == "user"]
+        for cut in candidate_user_indices[1:]:
+            trial = [system] + rest[keep_from + cut:]
+            if _approx_content_length(trial) <= MAX_API_CHARS:
+                return trial
+        # Nothing fit except the last turn -- send that alone rather than fail outright.
+        if candidate_user_indices:
+            return [system] + rest[keep_from + candidate_user_indices[-1]:]
+
+    return candidate
 
 SYSTEM_PROMPT_BASE = """You are a helpful assistant with real tools: live web search, \
 running shell commands, and reading/writing/editing files. Work inside the \
