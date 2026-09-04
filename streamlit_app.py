@@ -370,6 +370,8 @@ for entry in st.session_state.display_log:
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
 
 
 def run_turn(task: str, uploaded_files=None):
@@ -395,6 +397,20 @@ def run_turn(task: str, uploaded_files=None):
                 ],
             })
             upload_notes.append(f"🖼️ {uploaded.name}")
+        elif ext in AUDIO_EXTENSIONS or ext in VIDEO_EXTENSIONS:
+            # Transcribe the spoken audio (video: audio track only, no visual
+            # understanding of what's shown) and feed the transcript as text.
+            try:
+                transcript = providers.transcribe_audio(save_path)
+                kind = "audio" if ext in AUDIO_EXTENSIONS else "video (audio only, not visuals)"
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": f"[Transcribed {kind}: {uploaded.name}]\n\n{transcript}",
+                })
+                upload_notes.append(f"🎙️ {uploaded.name}")
+            except Exception as e:
+                st.warning(f"Couldn't transcribe {uploaded.name}: {e}")
+                upload_notes.append(f"⚠️ {uploaded.name} (transcription failed)")
         else:
             text = documents.extract_text(save_path)
             st.session_state.messages.append({
@@ -514,7 +530,8 @@ submission = st.chat_input(
     "Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...",
     accept_file="multiple",
     file_type=["pdf", "docx", "txt", "md", "csv", "json", "py", "html", "htm", "js", "css",
-               "png", "jpg", "jpeg", "gif", "webp"],
+               "png", "jpg", "jpeg", "gif", "webp",
+               "mp3", "wav", "m4a", "ogg", "flac", "mp4", "mov", "webm", "avi", "mkv"],
 )
 
 if submission:
