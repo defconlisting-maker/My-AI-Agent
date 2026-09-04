@@ -75,6 +75,26 @@ def _flatten_for_text_only(messages: list) -> list:
     return flattened
 
 
+def transcribe_audio(file_path: str) -> str:
+    """Transcribe an audio or video file's spoken content via Groq's free
+    Whisper endpoint. Video files work too -- only the audio track is used,
+    there's no visual understanding of what's shown. Requires a Groq key
+    specifically (the only one of the three offering free transcription)."""
+    key = key_store.get_active_key("groq")
+    if not key:
+        raise NoProviderAvailable(
+            "Audio/video transcription needs a Groq API key specifically "
+            "(free, no card) -- add one in Settings."
+        )
+    client = OpenAI(api_key=key, base_url=PROVIDER_CONFIG["groq"]["base_url"])
+    with open(file_path, "rb") as f:
+        result = client.audio.transcriptions.create(
+            model="whisper-large-v3-turbo",
+            file=f,
+        )
+    return result.text
+
+
 def call_with_fallback(messages, tools=None, notify=None):
     """
     Try each provider in FALLBACK_ORDER until one succeeds.
