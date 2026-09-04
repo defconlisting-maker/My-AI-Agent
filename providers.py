@@ -11,7 +11,7 @@ import key_store
 PROVIDER_CONFIG = {
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "model": "gemini-3.7-flash",
+        "model": "gemini-2.5-flash-lite",
     },
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
@@ -92,7 +92,12 @@ def transcribe_audio(file_path: str) -> str:
             model="whisper-large-v3-turbo",
             file=f,
         )
-    return result.text
+    text = result.text
+    # Same reasoning as documents.py: this gets resent with every future turn,
+    # so an hour-long transcript shouldn't be allowed to blow the token budget.
+    if len(text) > 6000:
+        text = text[:6000] + "\n...[transcript truncated -- it was longer]..."
+    return text
 
 
 def call_with_fallback(messages, tools=None, notify=None):
