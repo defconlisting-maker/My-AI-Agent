@@ -26,6 +26,31 @@ import projects_store
 st.set_page_config(page_title="My Agent", page_icon="🤖", layout="centered")
 
 MAX_ITERATIONS = 15
+MAX_HISTORY_MESSAGES = 20  # keep API requests small enough for free-tier token limits
+
+
+def trim_for_api(messages: list) -> list:
+    """Return a size-capped copy of the conversation for the actual API call,
+    without touching the full history kept in session_state/storage. Trims at
+    user-message boundaries only, so a tool call is never separated from its
+    result (which would make the request invalid)."""
+    if len(messages) <= MAX_HISTORY_MESSAGES + 1:
+        return messages
+
+    system = messages[0]
+    rest = messages[1:]
+    user_indices = [i for i, m in enumerate(rest) if m.get("role") == "user"]
+    if not user_indices:
+        return messages
+
+    keep_from = user_indices[-1]
+    for idx in reversed(user_indices):
+        if len(rest) - idx <= MAX_HISTORY_MESSAGES:
+            keep_from = idx
+        else:
+            break
+
+    return [system] + rest[keep_from:]
 
 SYSTEM_PROMPT_BASE = """You are a helpful assistant with real tools: live web search, \
 running shell commands, and reading/writing/editing files. Work inside the \
@@ -389,7 +414,7 @@ def run_turn(task: str, uploaded_files=None):
         for step in range(MAX_ITERATIONS):
             try:
                 provider_used, msg = providers.call_with_fallback(
-                    st.session_state.messages, tools=tools.TOOL_SCHEMAS, notify=notify
+                    trim_for_api(st.session_state.messages), tools=tools.TOOL_SCHEMAS, notify=notify
                 )
             except providers.NoProviderAvailable as e:
                 final_reply = (
