@@ -23,6 +23,9 @@ def extract_text(filepath: str) -> str:
     else:
         return f"[Unsupported file type: {ext}. Supported: pdf, docx, txt, md, csv, json, py, js, html]"
 
-    if len(text) > 20000:
-        text = text[:20000] + "\n...[truncated, document is longer]..."
+    # Free-tier providers (especially Groq) have small per-minute token limits,
+    # and this text gets resent with every future turn in the conversation --
+    # so keep it modest rather than dumping a huge document in one shot.
+    if len(text) > 6000:
+        text = text[:6000] + "\n...[truncated -- document is longer; ask specific questions about later sections if needed]..."
     return text
