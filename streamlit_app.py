@@ -6,6 +6,7 @@ Local test:  streamlit run streamlit_app.py
 Deploy:      see README.md
 """
 
+import base64
 import datetime
 import io
 import json
@@ -70,7 +71,8 @@ source link instead. Prefer official or well-known educational sites.
 practice resources over just handing over a final answer to copy -- the goal \
 is the person understanding the material.
 4. If a document's contents were provided in the conversation, treat that as \
-ground truth context for the task.
+ground truth context for the task. If an image was uploaded, describe/analyze \
+what you actually see in it.
 5. Be concise in your text -- the tool calls are the actual work.
 6. Call task_complete with a summary once genuinely done (for coding tasks) \
 or once the question is fully answered (for research questions).
@@ -367,6 +369,9 @@ for entry in st.session_state.display_log:
         st.markdown(entry["content"])
 
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
 def run_turn(task: str, uploaded_files=None):
     """Process one user turn (typed or spoken) through the agent loop."""
     uploaded_files = uploaded_files or []
@@ -376,12 +381,27 @@ def run_turn(task: str, uploaded_files=None):
         save_path = os.path.join(tools.WORKDIR, uploaded.name)
         with open(save_path, "wb") as f:
             f.write(uploaded.getbuffer())
-        text = documents.extract_text(save_path)
-        st.session_state.messages.append({
-            "role": "user",
-            "content": f"[Uploaded document: {uploaded.name}]\n\n{text}",
-        })
-        upload_notes.append(f"📎 {uploaded.name}")
+
+        ext = os.path.splitext(uploaded.name)[1].lower()
+        if ext in IMAGE_EXTENSIONS:
+            # Send as real image content the model can see (vision), not just text.
+            mime_type = mimetypes.guess_type(uploaded.name)[0] or "image/png"
+            b64 = base64.b64encode(uploaded.getbuffer()).decode("utf-8")
+            st.session_state.messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"[Uploaded image: {uploaded.name}]"},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}},
+                ],
+            })
+            upload_notes.append(f"🖼️ {uploaded.name}")
+        else:
+            text = documents.extract_text(save_path)
+            st.session_state.messages.append({
+                "role": "user",
+                "content": f"[Uploaded document: {uploaded.name}]\n\n{text}",
+            })
+            upload_notes.append(f"📎 {uploaded.name}")
 
     display_text = task
     if upload_notes:
@@ -493,7 +513,8 @@ def run_turn(task: str, uploaded_files=None):
 submission = st.chat_input(
     "Describe the task, or ask a question... / Beskryf die taak, of vra 'n vraag...",
     accept_file="multiple",
-    file_type=["pdf", "docx", "txt", "md", "csv", "json", "py", "html", "htm", "js", "css"],
+    file_type=["pdf", "docx", "txt", "md", "csv", "json", "py", "html", "htm", "js", "css",
+               "png", "jpg", "jpeg", "gif", "webp"],
 )
 
 if submission:
